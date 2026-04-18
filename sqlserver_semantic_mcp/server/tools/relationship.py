@@ -44,13 +44,20 @@ def register() -> None:
     register_tool(
         Tool(
             name="get_dependency_chain",
-            description="List all tables reachable from a given table via FKs.",
+            description=(
+                "List all tables reachable from a given table via FKs. "
+                "schemas param limits the BFS frontier to allowed schemas "
+                "(start table always included)."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "schema": {"type": "string"},
-                    "table":  {"type": "string"},
+                    "schema":    {"type": "string"},
+                    "table":     {"type": "string"},
                     "max_depth": {"type": "integer", "default": 10},
+                    "schemas":   {"oneOf": [{"type": "string"},
+                                            {"type": "array",
+                                             "items": {"type": "string"}}]},
                 },
                 "required": ["schema", "table"],
             },
@@ -80,8 +87,16 @@ async def _path(args: dict) -> dict:
 
 async def _chain(args: dict) -> list[dict]:
     ctx = get_context()
+    raw = args.get("schemas")
+    if isinstance(raw, str):
+        schemas = [raw] if raw else None
+    elif isinstance(raw, list):
+        schemas = [s for s in raw if isinstance(s, str) and s] or None
+    else:
+        schemas = None
     return await relationship_service.get_dependency_chain(
         ctx.cfg.cache_path, ctx.cfg.mssql_database,
         args["schema"], args["table"],
         max_depth=args.get("max_depth", 10),
+        schemas=schemas,
     )

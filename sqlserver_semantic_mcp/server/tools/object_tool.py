@@ -5,17 +5,29 @@ from mcp.types import Tool
 
 from ...services import object_service
 from ..app import get_context, register_tool
+from .shape import project_describe_object, resolve_detail
 
 
-_INPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "schema":             {"type": "string"},
-        "name":               {"type": "string"},
-        "include_definition": {"type": "boolean", "default": False},
-    },
-    "required": ["schema", "name"],
+_DETAIL_PROP = {
+    "type": "string", "enum": ["brief", "standard", "full"],
+    "default": "brief",
+    "description": "Response verbosity. brief strips definition; full always "
+                   "includes it. include_definition overrides to include at "
+                   "brief/standard tiers.",
 }
+
+
+def _input_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "schema":             {"type": "string"},
+            "name":               {"type": "string"},
+            "detail":             _DETAIL_PROP,
+            "include_definition": {"type": "boolean", "default": False},
+        },
+        "required": ["schema", "name"],
+    }
 
 
 def register() -> None:
@@ -23,11 +35,11 @@ def register() -> None:
         Tool(
             name="describe_view",
             description=(
-                "Return view metadata + dependencies. By default the full SQL "
-                "definition is stripped and replaced with definition_hash + "
-                "definition_bytes. Pass include_definition=true to get the full text."
+                "Return view metadata + dependencies. detail=brief (default) "
+                "strips SQL definition; detail=full or include_definition=true "
+                "returns the full text."
             ),
-            inputSchema=_INPUT_SCHEMA,
+            inputSchema=_input_schema(),
         ),
         _describe_view,
     )
@@ -35,11 +47,11 @@ def register() -> None:
         Tool(
             name="describe_procedure",
             description=(
-                "Return procedure metadata + dependencies. By default the full SQL "
-                "definition is stripped and replaced with definition_hash + "
-                "definition_bytes. Pass include_definition=true to get the full text."
+                "Return procedure metadata + dependencies. detail=brief (default) "
+                "strips SQL definition; detail=full or include_definition=true "
+                "returns the full text."
             ),
-            inputSchema=_INPUT_SCHEMA,
+            inputSchema=_input_schema(),
         ),
         _describe_procedure,
     )
@@ -62,41 +74,36 @@ def register() -> None:
     )
 
 
-def _apply_definition_policy(obj: dict, include_definition: bool) -> dict:
+def _attach_hash_and_bytes(obj: dict) -> dict:
     definition = obj.get("definition")
     if not isinstance(definition, str) or not definition:
         return obj
-
+    if "definition_hash" in obj and "definition_bytes" in obj:
+        return obj
     encoded = definition.encode("utf-8")
-    digest = hashlib.sha1(encoded).hexdigest()[:8]
-    out: dict[str, Any] = {}
-    for k, v in obj.items():
-        if k == "definition":
-            if include_definition:
-                out[k] = v
-            continue
-        out[k] = v
-    out["definition_hash"] = digest
-    out["definition_bytes"] = len(encoded)
+    out = dict(obj)
+    out.setdefault("definition_hash", hashlib.sha1(encoded).hexdigest()[:8])
+    out.setdefault("definition_bytes", len(encoded))
     return out
 
 
-async def _describe_view(args: dict) -> dict:
+async def _describe_object(args: dict, object_type: str) -> dict:
     ctx = get_context()
+    detail = resolve_detail(args)
     include = bool(args.get("include_definition", False))
     obj = await object_service.describe_object(
-        args["schema"], args["name"], "VIEW", ctx.cfg,
+        args["schema"], args["name"], object_type, ctx.cfg,
     )
-    return _apply_definition_policy(obj, include)
+    obj = _attach_hash_and_bytes(obj)
+    return project_describe_object(obj, detail=detail, include_definition=include)
+
+
+async def _describe_view(args: dict) -> dict:
+    return await _describe_object(args, "VIEW")
 
 
 async def _describe_procedure(args: dict) -> dict:
-    ctx = get_context()
-    include = bool(args.get("include_definition", False))
-    obj = await object_service.describe_object(
-        args["schema"], args["name"], "PROCEDURE", ctx.cfg,
-    )
-    return _apply_definition_policy(obj, include)
+    return await _describe_object(args, "PROCEDURE")
 
 
 async def _trace(args: dict) -> list[str]:
