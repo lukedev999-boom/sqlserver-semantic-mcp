@@ -8,11 +8,9 @@ from ..app import app, get_context
 
 @app.list_resources()
 async def list_resources() -> list[Resource]:
+    # Only resources without a tool equivalent are listed here.
+    # `get_tables` tool supersedes the old semantic://schema/tables resource.
     return [
-        Resource(
-            uri=AnyUrl("semantic://schema/tables"),
-            name="All tables", mimeType="application/json",
-        ),
         Resource(
             uri=AnyUrl("semantic://summary/database"),
             name="Database summary", mimeType="application/json",

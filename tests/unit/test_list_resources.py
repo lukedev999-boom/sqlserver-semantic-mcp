@@ -13,15 +13,15 @@ def env(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_list_resources_is_constant_size(env):
+async def test_list_resources_only_summary_after_dedup(env):
     from sqlserver_semantic_mcp.server.resources import schema as mod
 
     resources = await mod.list_resources()
 
-    assert len(resources) == 2
+    # P2: semantic://schema/tables dropped (duplicates get_tables tool).
+    assert len(resources) == 1
     uris = [str(r.uri) for r in resources]
-    assert "semantic://schema/tables" in uris
-    assert "semantic://summary/database" in uris
+    assert uris == ["semantic://summary/database"]
 
 
 @pytest.mark.asyncio
