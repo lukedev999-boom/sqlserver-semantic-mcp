@@ -1,0 +1,37 @@
+[project]
+name = "sqlserver-semantic-mcp"
+version = "0.1.0"
+description = "Semantic understanding MCP server for SQL Server"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "pymssql>=2.3.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "aiosqlite>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.0.0",
+]
+
+[project.scripts]
+sqlserver-semantic-mcp = "sqlserver_semantic_mcp.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sqlserver_semantic_mcp*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "integration: requires live SQL Server"
+]

@@ -1,0 +1,14 @@
+from typing import Optional
+from pydantic import BaseModel
+
+
+class Column(BaseModel):
+    schema_name: str
+    table_name: str
+    column_name: str
+    data_type: str
+    max_length: Optional[int] = None
+    is_nullable: bool
+    column_default: Optional[str] = None
+    ordinal_position: int
+    description: Optional[str] = None

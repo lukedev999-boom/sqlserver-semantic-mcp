@@ -1,0 +1,87 @@
+import json
+from mcp.types import Resource
+from pydantic import AnyUrl
+
+from ...services import metadata_service, semantic_service, object_service
+from ..app import app, get_context
+
+
+@app.list_resources()
+async def list_resources() -> list[Resource]:
+    ctx = get_context()
+    tables = await metadata_service.list_tables(
+        ctx.cfg.cache_path, ctx.cfg.mssql_database,
+    )
+    resources: list[Resource] = [
+        Resource(uri=AnyUrl("semantic://schema/tables"),
+                 name="All tables", mimeType="application/json"),
+        Resource(uri=AnyUrl("semantic://summary/database"),
+                 name="Database summary", mimeType="application/json"),
+    ]
+    for t in tables:
+        qualified = f"{t['schema_name']}.{t['table_name']}"
+        resources.append(Resource(
+            uri=AnyUrl(f"semantic://schema/tables/{qualified}"),
+            name=f"Table: {qualified}", mimeType="application/json",
+        ))
+        resources.append(Resource(
+            uri=AnyUrl(f"semantic://analysis/classification/{qualified}"),
+            name=f"Classification: {qualified}", mimeType="application/json",
+        ))
+    return resources
+
+
+@app.read_resource()
+async def read_resource(uri: AnyUrl) -> str:
+    ctx = get_context()
+    cp = ctx.cfg.cache_path
+    db = ctx.cfg.mssql_database
+    s = str(uri)
+
+    if s == "semantic://schema/tables":
+        return json.dumps(await metadata_service.list_tables(cp, db), default=str)
+
+    if s == "semantic://summary/database":
+        return json.dumps(
+            await metadata_service.database_summary(cp, db), default=str,
+        )
+
+    def _split_qualified(qualified: str, uri: str) -> tuple[str, str]:
+        parts = qualified.split(".", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(
+                f"Invalid resource URI '{uri}': expected schema.table format"
+            )
+        return parts[0], parts[1]
+
+    if s.startswith("semantic://schema/tables/"):
+        qualified = s[len("semantic://schema/tables/"):]
+        schema, table = _split_qualified(qualified, s)
+        return json.dumps(
+            await metadata_service.describe_table(cp, db, schema, table),
+            default=str,
+        )
+
+    if s.startswith("semantic://analysis/classification/"):
+        qualified = s[len("semantic://analysis/classification/"):]
+        schema, table = _split_qualified(qualified, s)
+        return json.dumps(
+            await semantic_service.classify_table(cp, db, schema, table),
+            default=str,
+        )
+
+    if s.startswith("semantic://analysis/dependencies/"):
+        qualified = s[len("semantic://analysis/dependencies/"):]
+        parts = qualified.split("/")
+        if len(parts) != 2:
+            raise ValueError(
+                f"Invalid resource URI '{s}': expected <type>/<schema>.<name>"
+            )
+        obj_type = parts[0].upper()
+        schema, name = _split_qualified(parts[1], s)
+        return json.dumps(
+            await object_service.describe_object(schema, name, obj_type, ctx.cfg),
+            default=str,
+        )
+
+    raise ValueError(f"Unknown resource URI: {s}")
