@@ -8,6 +8,7 @@ from mcp.types import Tool, TextContent
 from ..config import Config, get_config
 from ..services.policy_service import PolicyService
 from ..services.query_service import QueryService
+from .compact import compact
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,12 @@ async def _call_tool(name: str, arguments: dict) -> list[TextContent]:
         result = await handler(arguments or {})
         return [TextContent(
             type="text",
-            text=json.dumps(result, ensure_ascii=False, indent=2, default=str),
+            text=json.dumps(
+                compact(result),
+                ensure_ascii=False,
+                default=str,
+                separators=(",", ":"),
+            ),
         )]
     except Exception as e:
         logger.exception("Tool %s raised", name)
