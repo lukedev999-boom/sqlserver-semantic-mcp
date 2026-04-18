@@ -35,6 +35,9 @@ class Config(BaseSettings):
     max_rows_affected: int = Field(default=100, ge=1)
     query_timeout: int = Field(default=30, ge=1)
 
+    # ---- Tool surface ----
+    tool_profile: str = "all"
+
 
 _config: Optional[Config] = None
 
