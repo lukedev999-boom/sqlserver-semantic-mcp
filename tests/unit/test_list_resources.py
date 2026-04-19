@@ -25,12 +25,16 @@ async def test_list_resources_only_summary_after_dedup(env):
 
 
 @pytest.mark.asyncio
-async def test_list_resource_templates_returns_two_patterns(env):
+async def test_list_resource_templates_returns_expected_patterns(env):
     from sqlserver_semantic_mcp.server.resources import schema as mod
 
     templates = await mod.list_resource_templates()
-
-    assert len(templates) == 2
     patterns = [t.uriTemplate for t in templates]
+
+    # v0.4 baseline templates
     assert "semantic://schema/tables/{qualified}" in patterns
     assert "semantic://analysis/classification/{qualified}" in patterns
+    # v0.5 AI-ready summary templates
+    assert "semantic://summary/table/{qualified}" in patterns
+    assert "semantic://summary/object/{type}/{qualified}" in patterns
+    assert "semantic://bundle/joining/{qualified}" in patterns

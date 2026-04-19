@@ -12,6 +12,7 @@ from .infrastructure.cache.structural import (
 )
 from .server.app import app, get_context
 from .server import resources  # noqa: F401
+from .server.prompts import register_prompts
 from .server.tools import register_all
 
 logging.basicConfig(
@@ -47,6 +48,7 @@ async def _startup() -> asyncio.Task | None:
         bg_task = asyncio.create_task(background_fill_loop(cfg))
 
     register_all()
+    register_prompts()
     get_context()
     return bg_task
 

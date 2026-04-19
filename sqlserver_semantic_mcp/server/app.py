@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Optional
 
 from mcp.server import Server
 from mcp.types import Tool, TextContent
@@ -9,9 +9,23 @@ from ..config import Config, get_config
 from ..services import metrics_service
 from ..services.policy_service import PolicyService
 from ..services.query_service import QueryService
+from ..workflows.facade import WorkflowFacade
 from .compact import compact
 
 logger = logging.getLogger(__name__)
+
+
+_WORKFLOW_TOOLS = frozenset({
+    "plan_or_execute_query",
+    "preview_safe_query",
+    "discover_relevant_tables",
+    "suggest_next_tool",
+    "estimate_execution_risk",
+    "bundle_context_for_next_step",
+    "score_join_candidate",
+    "summarize_table_for_joining",
+    "summarize_object_for_impact",
+})
 
 
 class Context:
@@ -19,6 +33,7 @@ class Context:
         self.cfg = cfg
         self.policy = PolicyService(cfg)
         self.query = QueryService(self.policy, cfg)
+        self.workflow = WorkflowFacade(cfg, self.policy, self.query)
 
 
 _ctx: Context | None = None
@@ -52,6 +67,33 @@ async def _list_tools() -> list[Tool]:
     return [t for (t, _) in _TOOL_REGISTRY.values()]
 
 
+def _infer_workflow_metrics(name: str, shaped: Any) -> dict[str, Any]:
+    """Extract workflow-aware fields from the response envelope, if any."""
+    extras: dict[str, Any] = {}
+    if not isinstance(shaped, dict):
+        return extras
+    if name in _WORKFLOW_TOOLS:
+        extras["route_type"] = shaped.get("kind")
+    for key in ("detail", "response_mode", "token_budget_hint",
+                "next_action", "bundle_key"):
+        if key in shaped:
+            extras[key] = shaped.get(key)
+    data = shaped.get("data")
+    if isinstance(data, dict):
+        if "path" in data and "route_type" not in extras:
+            extras["route_type"] = data.get("path")
+        if name == "plan_or_execute_query":
+            extras["was_direct_execute"] = (
+                data.get("path") == "direct_execute"
+                and bool(data.get("executed"))
+            )
+        if "response_mode" not in extras and "response_mode" in data:
+            extras["response_mode"] = data.get("response_mode")
+    if "bundle_key" in shaped:
+        extras["bundle_used"] = True
+    return extras
+
+
 @app.call_tool()
 async def _call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name not in _TOOL_REGISTRY:
@@ -65,11 +107,13 @@ async def _call_tool(name: str, arguments: dict) -> list[TextContent]:
         )
         if get_config().metrics_enabled:
             try:
+                extras = _infer_workflow_metrics(name, shaped)
                 await metrics_service.record_metric(
                     get_config().cache_path, name,
                     response_bytes=len(text.encode("utf-8")),
                     array_length=len(shaped) if isinstance(shaped, list) else None,
                     fields_returned=len(shaped) if isinstance(shaped, dict) else None,
+                    **extras,
                 )
             except Exception:
                 logger.exception("metrics_service.record_metric failed")

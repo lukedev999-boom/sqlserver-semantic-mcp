@@ -1,6 +1,12 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DetailTier = Literal["brief", "standard", "full"]
+ResponseMode = Literal["summary", "rows", "sample", "count_only"]
+TokenBudgetHint = Literal["tiny", "low", "medium", "high"]
+AffectedRowsPolicy = Literal["strict", "report"]
 
 
 class Config(BaseSettings):
@@ -40,6 +46,18 @@ class Config(BaseSettings):
 
     # ---- Metrics ----
     metrics_enabled: bool = True
+
+    # ---- v0.5 agent-oriented defaults ----
+    default_detail: DetailTier = "brief"
+    default_response_mode: ResponseMode = "summary"
+    default_token_budget_hint: TokenBudgetHint = "low"
+    direct_execute_enabled: bool = True
+    strict_rows_affected_cap: bool = True
+    workflow_tools_enabled: bool = True
+
+    # ---- Analyzer router ----
+    # regex (default, regex-based) | ast (placeholder; falls back to regex)
+    intent_analyzer: Literal["regex", "ast"] = "regex"
 
 
 _config: Optional[Config] = None

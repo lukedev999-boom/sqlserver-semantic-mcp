@@ -25,7 +25,9 @@ def register() -> None:
             name="find_join_path",
             description=(
                 "Find a shortest FK-based join path between two tables "
-                "(BFS, bidirectional edges)."
+                "(BFS, bidirectional edges). Use after candidate tables are "
+                "known. For ranking multiple reasonable paths, call "
+                "score_join_candidate next."
             ),
             inputSchema={
                 "type": "object",

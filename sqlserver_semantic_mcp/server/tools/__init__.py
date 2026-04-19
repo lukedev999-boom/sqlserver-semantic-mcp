@@ -1,6 +1,6 @@
 from . import (
     metadata, policy, query, cache,
-    relationship, object_tool, semantic, metrics,
+    relationship, object_tool, semantic, metrics, workflow,
 )  # noqa: F401
 
 
@@ -13,6 +13,7 @@ _GROUP_REGISTRATIONS = {
     "object":       object_tool.register,
     "semantic":     semantic.register,
     "metrics":      metrics.register,
+    "workflow":     workflow.register,
 }
 
 
@@ -34,5 +35,8 @@ def _resolve_profile_groups(profile: str) -> list[str]:
 def register_all() -> None:
     from ...config import get_config
     cfg = get_config()
-    for group in _resolve_profile_groups(cfg.tool_profile):
+    groups = _resolve_profile_groups(cfg.tool_profile)
+    if not cfg.workflow_tools_enabled and "workflow" in groups:
+        groups = [g for g in groups if g != "workflow"]
+    for group in groups:
         _GROUP_REGISTRATIONS[group]()

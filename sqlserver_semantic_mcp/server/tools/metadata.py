@@ -17,13 +17,28 @@ _DETAIL_PROP = {
 }
 
 
+_BUDGET_PROP = {
+    "type": "string", "enum": ["tiny", "low", "medium", "high"],
+    "description": "Payload budget hint. tiny = minimum; high = full.",
+}
+
+
+_BUDGET_LIMITS = {
+    "tiny":   20,
+    "low":    100,
+    "medium": 500,
+    "high":   2000,
+}
+
+
 def register() -> None:
     register_tool(
         Tool(
             name="get_tables",
             description=(
                 "List tables in the database. Supports schema / keyword filters "
-                "so the response stays small on large DBs."
+                "so the response stays small on large DBs. Pass limit or "
+                "token_budget_hint to further cap the payload."
             ),
             inputSchema={
                 "type": "object",
@@ -32,6 +47,8 @@ def register() -> None:
                                           {"type": "array",
                                            "items": {"type": "string"}}]},
                     "keyword": {"type": "string"},
+                    "limit":   {"type": "integer", "minimum": 1},
+                    "token_budget_hint": _BUDGET_PROP,
                 },
             },
         ),
@@ -91,14 +108,26 @@ def _normalize_schema_filter(raw) -> Optional[list[str]]:
     return None
 
 
+def _resolve_list_limit(args: dict, cfg_default: str) -> int | None:
+    explicit = args.get("limit")
+    if isinstance(explicit, int) and explicit > 0:
+        return explicit
+    hint = args.get("token_budget_hint") or cfg_default
+    return _BUDGET_LIMITS.get(hint)
+
+
 async def _get_tables(args: dict) -> list[dict]:
     ctx = get_context()
     schemas = _normalize_schema_filter(args.get("schema"))
     keyword = args.get("keyword") or None
-    return await metadata_service.list_tables(
+    rows = await metadata_service.list_tables(
         ctx.cfg.cache_path, ctx.cfg.mssql_database,
         schemas=schemas, keyword=keyword,
     )
+    cap = _resolve_list_limit(args, ctx.cfg.default_token_budget_hint)
+    if cap is not None and len(rows) > cap:
+        return rows[:cap]
+    return rows
 
 
 async def _describe_table(args: dict) -> Optional[dict]:

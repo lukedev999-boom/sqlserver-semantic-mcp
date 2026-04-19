@@ -14,6 +14,13 @@ class SqlIntent:
     risk_level: RiskLevel = RiskLevel.LOW
     is_multi_statement: bool = False
     statement_count: int = 1
+    # v0.5 heuristics — used by workflow router / risk estimation.
+    is_sql_like: bool = True
+    confidence: float = 0.9
+    requires_discovery: bool = False
+    has_unqualified_tables: bool = False
+    contains_dynamic_sql: bool = False
+    contains_cte: bool = False
 
 
 _OP_MAP = {
@@ -28,6 +35,7 @@ _OP_MAP = {
     "EXEC": SqlOperation.EXEC,
     "EXECUTE": SqlOperation.EXECUTE,
     "MERGE": SqlOperation.MERGE,
+    "WITH": SqlOperation.SELECT,  # CTE — treat body as SELECT for routing
 }
 
 _IDENT = r"\[?[\w]+\]?(?:\.\[?[\w]+\]?)?"
@@ -105,6 +113,39 @@ def _compute_risk(
     return RiskLevel.LOW
 
 
+_SQL_KEYWORDS = (
+    "select", "insert", "update", "delete", "truncate", "create",
+    "alter", "drop", "exec", "execute", "merge", "with", "from", "where",
+    "join",
+)
+
+
+def _looks_sql_like(text: str) -> bool:
+    """Heuristic: does this look like SQL rather than a natural-language ask?"""
+    if not text:
+        return False
+    lowered = text.lower()
+    if not any(kw in lowered for kw in _SQL_KEYWORDS):
+        return False
+    words = [w for w in re.split(r"\s+", lowered) if w]
+    if not words:
+        return False
+    punct_ratio = sum(1 for ch in text if ch in ",();.=*") / max(len(text), 1)
+    if words[0] in _SQL_KEYWORDS:
+        return True
+    return punct_ratio >= 0.02
+
+
+def _has_unqualified(tables: list[str]) -> bool:
+    return any("." not in t.strip("[]") for t in tables)
+
+
+_DYNAMIC_PAT = re.compile(
+    r"\b(EXEC(?:UTE)?\s*\(|sp_executesql)\b", re.IGNORECASE,
+)
+_CTE_PAT = re.compile(r"^\s*WITH\b", re.IGNORECASE)
+
+
 def analyze_sql(sql: str) -> SqlIntent:
     clean = _strip_comments(sql)
     statements = _split_statements(clean)
@@ -117,6 +158,25 @@ def analyze_sql(sql: str) -> SqlIntent:
     tables = _extract_tables(first, operation)
     risk = _compute_risk(operation, has_where, is_multi)
 
+    is_sql_like = _looks_sql_like(clean)
+    contains_cte = bool(_CTE_PAT.match(first))
+    contains_dynamic = bool(_DYNAMIC_PAT.search(first))
+    unqualified = _has_unqualified(tables)
+
+    if operation == SqlOperation.UNKNOWN:
+        confidence = 0.1 if not is_sql_like else 0.4
+    elif unqualified and operation != SqlOperation.SELECT:
+        confidence = 0.6
+    elif contains_dynamic:
+        confidence = 0.5
+    else:
+        confidence = 0.9
+
+    requires_discovery = (
+        not is_sql_like
+        or operation == SqlOperation.UNKNOWN
+    )
+
     return SqlIntent(
         primary_operation=operation,
         has_where_clause=has_where,
@@ -125,4 +185,10 @@ def analyze_sql(sql: str) -> SqlIntent:
         risk_level=risk,
         is_multi_statement=is_multi,
         statement_count=len(statements),
+        is_sql_like=is_sql_like,
+        confidence=confidence,
+        requires_discovery=requires_discovery,
+        has_unqualified_tables=unqualified,
+        contains_dynamic_sql=contains_dynamic,
+        contains_cte=contains_cte,
     )

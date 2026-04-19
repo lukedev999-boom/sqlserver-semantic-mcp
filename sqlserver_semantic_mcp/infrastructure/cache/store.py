@@ -122,12 +122,19 @@ CREATE INDEX IF NOT EXISTS idx_sem_obj_status
     ON sem_object_definitions (status);
 
 CREATE TABLE IF NOT EXISTS tool_metrics (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    tool_name       TEXT NOT NULL,
-    response_bytes  INTEGER NOT NULL,
-    array_length    INTEGER,
-    fields_returned INTEGER,
-    recorded_at     TEXT NOT NULL
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_name          TEXT NOT NULL,
+    response_bytes     INTEGER NOT NULL,
+    array_length       INTEGER,
+    fields_returned    INTEGER,
+    route_type         TEXT,
+    detail             TEXT,
+    response_mode      TEXT,
+    token_budget_hint  TEXT,
+    was_direct_execute INTEGER,
+    bundle_used        INTEGER,
+    next_action        TEXT,
+    recorded_at        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tool_metrics_name
     ON tool_metrics (tool_name);
